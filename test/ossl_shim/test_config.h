@@ -41,16 +41,16 @@ struct TestConfig {
   std::string cert_file;
   std::string trust_cert; // Accepted but unused, since certificate trust is not verified by default
   std::string expect_server_name;
-  // bool enable_ech_grease = false; // ECH not (yet) available
-  // std::vector<std::vector<uint8_t>> ech_server_configs; // ECH not (yet) available
-  // std::vector<std::vector<uint8_t>> ech_server_keys; // ECH not (yet) available
-  // std::vector<int> ech_is_retry_config; // ECH not (yet) available
-  // bool expect_ech_accept = false; // ECH not (yet) available
-  // std::string expect_ech_name_override; // ECH not (yet) available
-  // bool expect_no_ech_name_override = false; // ECH not (yet) available
-  // std::vector<uint8_t> expect_ech_retry_configs; // ECH not (yet) available
-  // bool expect_no_ech_retry_configs = false; // ECH not (yet) available
-  // std::vector<uint8_t> ech_config_list; // ECH not (yet) available
+  bool enable_ech_grease = false;
+  std::vector<std::vector<uint8_t>> ech_server_configs;
+  std::vector<std::vector<uint8_t>> ech_server_keys;
+  std::vector<int> ech_is_retry_config;
+  bool expect_ech_accept = false;
+  // std::string expect_ech_name_override;
+  // bool expect_no_ech_name_override = false;
+  // std::vector<uint8_t> expect_ech_retry_configs;
+  // bool expect_no_ech_retry_configs = false;
+  std::vector<uint8_t> ech_config_list;
   std::vector<uint8_t> expect_certificate_types;
   bool require_any_client_certificate = false;
   std::string advertise_npn;

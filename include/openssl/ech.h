@@ -20,6 +20,10 @@
 
 # ifndef OPENSSL_NO_ECH
 
+#  ifdef  __cplusplus
+extern "C" {
+#  endif
+
 /*
  * Some externally visible limits - most used for sanity checks that could be
  * bigger if needed, but that work for now
@@ -130,4 +134,10 @@ void SSL_CTX_ech_set_callback(SSL_CTX *ctx, SSL_ech_cb_func f);
 int SSL_set1_ech_config_list(SSL *ssl, const uint8_t *ecl, size_t ecl_len);
 
 # endif
+
+# ifdef  __cplusplus
+}
+# endif
+
+
 #endif
