@@ -29,7 +29,6 @@
 #define GROUP_ID_X25519MLKEM768 0x11ec
 
 static const std::unordered_map<uint16_t, shim_group> kGroups = {
-  {0x0015, {NID_secp224r1, "secp224r1"}},
   {0x0017, {NID_X9_62_prime256v1, "secp256r1"}},
   {0x0018, {NID_secp384r1, "secp384r1"}},
   {0x0019, {NID_secp521r1, "secp521r1"}},
