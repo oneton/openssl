@@ -31,5 +31,10 @@ jobs:
       run: |
         cat /proc/cpuinfo
         ./util/opensslwrap.sh version -c
+    - name: TEMP monkey patch runner for OCSP
+      run: |
+        cd boringssl
+        git apply ../test/ossl_shim/runner.patch
+        cd ..
     - name: test external boringssl
       run: BORING_RUNNER_DIR=$(pwd)/boringssl/ssl/test/runner make test TESTS="test_external_boringssl"
