@@ -455,6 +455,7 @@ const Flag<TestConfig> *FindFlag(const char *name) {
         StringFlag("-key-file", &TestConfig::key_file),
         IntVectorFlag("-signing-prefs", &TestConfig::signing_prefs),
         Base64Flag("-ocsp-response", &TestConfig::ocsp_response),
+        BoolFlag("-no-server-name-ack", &TestConfig::no_server_name_ack),
 
         StringFlag("-shim-key-log-file", &TestConfig::shim_key_log_file),
     };
@@ -598,15 +599,28 @@ static int OCSPCallback(SSL *ssl, void *arg) {
 static int ServerNameCallback(SSL *ssl, int *out_alert, void *arg) {
   // SNI must be accessible from the SNI callback.
   const TestConfig *config = GetTestConfig(ssl);
-  const char *server_name = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
-  if (server_name == nullptr ||
-      std::string(server_name) != config->expect_server_name) {
-    fprintf(stderr, "servername mismatch (got %s; want %s).\n", server_name,
-            config->expect_server_name.c_str());
-    return SSL_TLSEXT_ERR_ALERT_FATAL;
+  if (!config->expect_server_name.empty()) {
+    const char *server_name =
+        SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+    if (server_name == nullptr ||
+        std::string(server_name) != config->expect_server_name) {
+      fprintf(stderr, "servername mismatch (got %s; want %s).\n", server_name,
+              config->expect_server_name.c_str());
+      return SSL_TLSEXT_ERR_ALERT_FATAL;
+    }
   }
 
-  return SSL_TLSEXT_ERR_OK;
+  /*
+   * This is a workaround for an implementation difference. Boring never
+   * acknowledges on resumption, while OpenSSL does acknowledge when the
+   * client requests a different server name on resumption in TLS1.3.
+   *
+   * See https://boringssl.googlesource.com/boringssl/+/e2766abdee78c55c2447b5346875995439c28cc6%5E%21/
+   */
+  if (SSL_session_reused(ssl) && SSL_version(ssl) == TLS1_3_VERSION)
+    return SSL_TLSEXT_ERR_NOACK;
+
+  return config->no_server_name_ack ? SSL_TLSEXT_ERR_NOACK : SSL_TLSEXT_ERR_OK;
 }
 
 static int NextProtoSelectCallback(SSL *ssl, uint8_t **out, uint8_t *outlen,
@@ -1167,9 +1181,7 @@ bssl::UniquePtr<SSL_CTX> TestConfig::SetupCtx(SSL_CTX *old_ctx) const {
     }
   }
 
-  if (!expect_server_name.empty()) {
-    SSL_CTX_set_tlsext_servername_callback(ssl_ctx.get(), ServerNameCallback);
-  }
+  SSL_CTX_set_tlsext_servername_callback(ssl_ctx.get(), ServerNameCallback);
 
   // Trying to match the logic between BoringSSL and OpenSSL is a little
   // confusing. BoringSSL uses defaults for sign and verify (as do the tests),

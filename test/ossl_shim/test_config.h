@@ -212,6 +212,7 @@ struct TestConfig {
   // int private_key_delay_ms = 0;
   // bool resumption_across_names_enabled = false; // Not available
   // std::optional<bool> expect_resumable_across_names; // Not available
+  bool no_server_name_ack = false;
 
   // Debugging options
   std::string shim_key_log_file;
