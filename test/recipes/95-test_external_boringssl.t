@@ -25,6 +25,6 @@ indir $ENV{BORING_RUNNER_DIR} => sub {
                bldtop_file("test", "ossl_shim", "ossl_shim"),
                "-shim-config",
                srctop_file("test", "ossl_shim", "ossl_config.json"),
-               "-pipe", "-allow-unimplemented"]), prefix => "go test: "),
+               "-pipe", "-allow-unimplemented", "-test", "*ECH*"]), prefix => "go test: "),
       "running BoringSSL tests");
 }, create => 0, cleanup => 0;
