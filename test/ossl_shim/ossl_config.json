@@ -222,6 +222,7 @@
         ":INVALID_ALPN_PROTOCOL:": [":tls_handle_alpn:internal error:"],
         ":INVALID_COMPRESSION_LIST:": [":no compression specified:", ":required compression algorithm missing:", ":invalid compression algorithm:"],
         ":INVALID_ENCODING:": [":invalid encoding:"],
+        ":INVALID_OUTER_EXTENSION:": [":bad extension:"],
         ":INVALID_OUTER_RECORD_TYPE:": [":bad record type:"],
         ":KEY_USAGE_BIT_INCORRECT:": [":bad ecc cert:"],
         ":MISSING_EXTENSION:": [":missing psk kex modes extension:"],
