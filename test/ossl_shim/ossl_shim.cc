@@ -50,6 +50,8 @@ OPENSSL_MSVC_PRAGMA(comment(lib, "Ws2_32.lib"))
 #include "test_config.h"
 #include "test_state.h"
 
+using namespace bssl;
+
 #if !defined(OPENSSL_WINDOWS)
 using Socket = int;
 #define INVALID_SOCKET (-1)
@@ -558,14 +560,7 @@ static bool DoConnection(bssl::UniquePtr<SSL_SESSION> *out_session,
   }
 
   if (config->is_dtls) {
-    bssl::UniquePtr<BIO> packeted = PacketedBioCreate(
-        GetClock(),
-        [ssl_raw = ssl.get()](timeval *out) -> bool {
-          return DTLSv1_get_timeout(ssl_raw, out);
-        },
-        [ssl_raw = ssl.get()](uint32_t mtu) -> bool {
-          return SSL_set_mtu(ssl_raw, mtu);
-        });
+    bssl::UniquePtr<BIO> packeted = PacketedBioCreate(GetClock(), ssl.get());
     if (!packeted) {
       return false;
     }
@@ -630,7 +625,7 @@ static bool DoExchange(bssl::UniquePtr<SSL_SESSION> *out_session,
     CopySessions(session_ctx, SSL_get_SSL_CTX(ssl));
 
     // Reset the state to assert later that the callback isn't called in
-    // renegotations.
+    // renegotiations.
     test_state->got_new_session = false;
   }
 
@@ -662,8 +657,7 @@ static bool DoExchange(bssl::UniquePtr<SSL_SESSION> *out_session,
     memset(buf.get(), 0x42, kBufLen);
     static const size_t kRecordSizes[] = {
         0, 1, 255, 256, 257, 16383, 16384, 16385, 32767, 32768, 32769};
-    for (size_t i = 0; i < OPENSSL_ARRAY_SIZE(kRecordSizes); i++) {
-      const size_t len = kRecordSizes[i];
+    for (size_t len : kRecordSizes) {
       if (len > kBufLen) {
         fprintf(stderr, "Bad kRecordSizes value.\n");
         return false;

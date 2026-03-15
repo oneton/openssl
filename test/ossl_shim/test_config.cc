@@ -99,66 +99,57 @@ std::optional<std::string> GetSignatureAlgorithmList(const std::vector<uint16_t>
   return sigalgs;
 }
 
+using namespace bssl;
+
 namespace {
 
 template <typename Config>
 struct Flag {
   const char *name;
+  // has_param, if true, causes the parser to look for a param value following
+  // this flag's name.
   bool has_param;
   // skip_handshaker, if true, causes this flag to be skipped when
   // forwarding flags to the handshaker. This should be used with flags
   // that only impact connecting to the runner.
   bool skip_handshaker;
-  // If |has_param| is false, |param| will be nullptr.
+  // set_param is called after parsing to interpret and set the result on
+  // `config`. If `has_param` is false for this flag, `param` will be nullptr.
+  // This function should return whether the param value (or lack thereof) was
+  // valid for this flag.
   std::function<bool(Config *config, const char *param)> set_param;
 };
+
+template <typename Config, typename T, typename U>
+Flag<Config> SetValueFlag(const char *name, T Config::*field, U value,
+                          bool skip_handshaker = false) {
+  return Flag<Config>{name, /*has_param=*/false, skip_handshaker,
+                      [=](Config *config, const char *param) -> bool {
+                        config->*field = value;
+                        return true;
+                      }};
+}
 
 template <typename Config>
 Flag<Config> BoolFlag(const char *name, bool Config::*field,
                       bool skip_handshaker = false) {
-  return Flag<Config>{name, false, skip_handshaker,
-                      [=](Config *config, const char *) -> bool {
-                        config->*field = true;
-                        return true;
-                      }};
-}
-
-template <typename Config>
-Flag<Config> OptionalBoolTrueFlag(const char *name,
-                                  std::optional<bool> Config::*field,
-                                  bool skip_handshaker = false) {
-  return Flag<Config>{name, false, skip_handshaker,
-                      [=](Config *config, const char *) -> bool {
-                        config->*field = true;
-                        return true;
-                      }};
-}
-
-template <typename Config>
-Flag<Config> OptionalBoolFalseFlag(const char *name,
-                                   std::optional<bool> Config::*field,
-                                   bool skip_handshaker = false) {
-  return Flag<Config>{name, false, skip_handshaker,
-                      [=](Config *config, const char *) -> bool {
-                        config->*field = false;
-                        return true;
-                      }};
+  return SetValueFlag(name, field, true, skip_handshaker);
 }
 
 template <typename T>
 bool StringToInt(T *out, const char *str) {
-  static_assert(std::is_integral<T>::value, "not an integral type");
+  static_assert(std::is_integral_v<T>, "not an integral type");
 
   // |strtoull| allows leading '-' with wraparound. Additionally, both
   // functions accept empty strings and leading whitespace.
   if (!OPENSSL_isdigit(static_cast<unsigned char>(*str)) &&
-      (!std::is_signed<T>::value || *str != '-')) {
+      (!std::is_signed_v<T> || *str != '-')) {
     return false;
   }
 
   errno = 0;
   char *end;
-  if (std::is_signed<T>::value) {
+  if (std::is_signed_v<T>) {
     static_assert(sizeof(T) <= sizeof(long long),
                   "type too large for long long");
     long long value = strtoll(str, &end, 10);
@@ -215,6 +206,26 @@ Flag<Config> IntVectorFlag(const char *name, std::vector<T> Config::*field,
                           return false;
                         }
                         (config->*field).push_back(value);
+                        return true;
+                      }};
+}
+
+// Defines a flag which adds an integer param value to an optional vector of
+// integers.
+template <typename Config, typename T>
+Flag<Config> OptionalIntVectorFlag(const char *name,
+                                   std::optional<std::vector<T>> Config::*field,
+                                   bool skip_handshaker = false) {
+  return Flag<Config>{name, true, skip_handshaker,
+                      [=](Config *config, const char *param) -> bool {
+                        if (!(config->*field)) {
+                          (config->*field).emplace();
+                        }
+                        T value;
+                        if (!StringToInt(&value, param)) {
+                          return false;
+                        }
+                        (config->*field)->push_back(value);
                         return true;
                       }};
 }
@@ -533,6 +544,9 @@ bool ParseConfig(int argc, char **argv, bool is_shim, TestConfig *out_initial,
     if (!skip) {
       if (out != nullptr) {
         if (!flag->set_param(out, param)) {
+          if (!param) {
+            param = "(no parameter)";
+          }
           fprintf(stderr, "Invalid parameter for %s: %s\n", name, param);
           return false;
         }
@@ -541,6 +555,9 @@ bool ParseConfig(int argc, char **argv, bool is_shim, TestConfig *out_initial,
         if (!flag->set_param(out_initial, param) ||
             !flag->set_param(out_resume, param) ||
             !flag->set_param(out_retry, param)) {
+          if (!param) {
+            param = "(no parameter)";
+          }
           fprintf(stderr, "Invalid parameter for %s: %s\n", name, param);
           return false;
         }
@@ -850,7 +867,7 @@ bssl::UniquePtr<EVP_PKEY> LoadPrivateKey(const std::string &file) {
     return nullptr;
   }
   return bssl::UniquePtr<EVP_PKEY>(
-      PEM_read_bio_PrivateKey(bio.get(), NULL, NULL, NULL));
+      PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr));
 }
 
 static bool GetCertificate(SSL *ssl, bssl::UniquePtr<X509> *out_x509,
@@ -1104,7 +1121,7 @@ bssl::UniquePtr<SSL_CTX> TestConfig::SetupCtx(SSL_CTX *old_ctx) const {
     "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256"
     ":ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384"
     ":ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305"
-    ":ECDHE-RSA-AES128-SHA256"
+    ":ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256"
     ":ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA"
     ":ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA"
     ":ECDHE-PSK-CHACHA20-POLY1305"
@@ -1136,15 +1153,15 @@ bssl::UniquePtr<SSL_CTX> TestConfig::SetupCtx(SSL_CTX *old_ctx) const {
   }
 
   SSL_CTX_set_next_protos_advertised_cb(ssl_ctx.get(),
-                                        NextProtosAdvertisedCallback, NULL);
+                                        NextProtosAdvertisedCallback, nullptr);
   if (!select_next_proto.empty() || select_empty_next_proto) {
     SSL_CTX_set_next_proto_select_cb(ssl_ctx.get(), NextProtoSelectCallback,
-                                     NULL);
+                                     nullptr);
   }
 
   if (!select_alpn.empty() || decline_alpn || reject_alpn ||
       select_empty_alpn) {
-    SSL_CTX_set_alpn_select_cb(ssl_ctx.get(), AlpnSelectCallback, NULL);
+    SSL_CTX_set_alpn_select_cb(ssl_ctx.get(), AlpnSelectCallback, nullptr);
   }
 
   SSL_CTX_set_info_callback(ssl_ctx.get(), InfoCallback);
@@ -1161,7 +1178,7 @@ bssl::UniquePtr<SSL_CTX> TestConfig::SetupCtx(SSL_CTX *old_ctx) const {
     return nullptr;
   }
 
-  SSL_CTX_set_cert_verify_callback(ssl_ctx.get(), CertVerifyCallback, NULL);
+  SSL_CTX_set_cert_verify_callback(ssl_ctx.get(), CertVerifyCallback, nullptr);
 
   if (enable_signed_cert_timestamps &&
       !SSL_CTX_enable_ct(ssl_ctx.get(), SSL_CT_VALIDATION_STRICT)) {
@@ -1355,7 +1372,7 @@ bssl::UniquePtr<SSL> TestConfig::NewSSL(
     mode = SSL_VERIFY_PEER;
   }
   if (mode != SSL_VERIFY_NONE) {
-    SSL_set_verify(ssl.get(), mode, NULL);
+    SSL_set_verify(ssl.get(), mode, nullptr);
   }
   if (partial_write) {
     SSL_set_mode(ssl.get(), SSL_MODE_ENABLE_PARTIAL_WRITE);

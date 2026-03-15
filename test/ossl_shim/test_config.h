@@ -37,6 +37,9 @@ struct TestConfig {
   std::vector<uint16_t> verify_prefs;
   // std::vector<uint16_t> expect_peer_verify_prefs; // Not available, requires checking peer signature algorithms
   std::vector<uint16_t> curves;
+  // std::vector<uint32_t> curves_flags;
+  // std::optional<std::vector<uint16_t>> key_shares;
+  // std::vector<uint16_t> server_supported_groups_hint;
   std::string key_file;
   std::string cert_file;
   std::string trust_cert; // Accepted but unused, since certificate trust is not verified by default
@@ -157,6 +160,7 @@ struct TestConfig {
   // uint16_t expect_cipher_aes = 0;
   // uint16_t expect_cipher_no_aes = 0;
   uint16_t expect_cipher = 0;
+  // bool expect_no_peer_cert = false;
   std::string expect_peer_cert_file;
   // int resumption_delay = 0;
   // bool retain_only_sha256_client_cert = false;

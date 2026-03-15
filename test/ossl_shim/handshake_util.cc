@@ -39,12 +39,8 @@ bool RetryAsync(SSL *ssl, int ret) {
   }
 
   if (test_state->packeted_bio != nullptr &&
-      PacketedBioAdvanceClock(test_state->packeted_bio)) {
-    int timeout_ret = DTLSv1_handle_timeout(ssl);
-    if (timeout_ret >= 0) {
-      return true;
-    }
-    ssl_err = SSL_get_error(ssl, timeout_ret);
+      PacketedBioHasInterrupt(test_state->packeted_bio)) {
+    return PacketedBioHandleInterrupt(test_state->packeted_bio);
   }
 
   // See if we needed to read or write more. If so, allow one byte through on
