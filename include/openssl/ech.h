@@ -28,7 +28,7 @@ extern "C" {
  * Some externally visible limits - most used for sanity checks that could be
  * bigger if needed, but that work for now
  */
-#define OSSL_ECH_MAX_PAYLOAD_LEN 1500 /* max ECH ciphertext to en/decode */
+#define OSSL_ECH_MAX_PAYLOAD_LEN 5000 /* max ECH ciphertext to en/decode */
 #define OSSL_ECH_MIN_ECHCONFIG_LEN 32 /* min for all encodings */
 #define OSSL_ECH_MAX_ECHCONFIG_LEN 1500 /* max for all encodings */
 #define OSSL_ECH_MAX_ECHCONFIGEXT_LEN 512 /* ECHConfig extension max */
