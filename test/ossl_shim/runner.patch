@@ -1,0 +1,15 @@
+diff --git a/ssl/test/runner/runner.go b/ssl/test/runner/runner.go
+index d9a863a16..38fac22b0 100644
+--- a/ssl/test/runner/runner.go
++++ b/ssl/test/runner/runner.go
+@@ -193,8 +193,8 @@ func initKeys() {
+ var channelIDBytes []byte
+ 
+ var (
+-	testOCSPResponse  = []byte{1, 2, 3, 4}
+-	testOCSPResponse2 = []byte{5, 6, 7, 8}
++	testOCSPResponse  = []byte{0x30, 0x03, 0x0a, 0x01, 0x03}
++	testOCSPResponse2 = []byte{0x30, 0x03, 0x0a, 0x01, 0x02}
+ 	testSCTList       = []byte{0, 6, 0, 4, 5, 6, 7, 8}
+ 	testSCTList2      = []byte{0, 6, 0, 4, 1, 2, 3, 4}
+ )

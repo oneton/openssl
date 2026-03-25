@@ -2226,6 +2226,7 @@ int ssl_cipher_list_to_bytes(SSL_CONNECTION *s, STACK_OF(SSL_CIPHER) *sk,
     int empty_reneg_info_scsv = !s->renegotiate
         && !SSL_CONNECTION_IS_DTLS(s)
         && ssl_security(s, SSL_SECOP_VERSION, 0, TLS1_VERSION, NULL)
+        && s->ext.ech.ch_depth != 1
         && s->min_proto_version <= TLS1_VERSION;
     SSL *ssl = SSL_CONNECTION_GET_SSL(s);
 

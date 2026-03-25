@@ -2202,6 +2202,16 @@ int ssl_choose_server_version(SSL_CONNECTION *s, CLIENTHELLO_MSG *hello,
             return SSL_R_BAD_LEGACY_VERSION;
 
         while (PACKET_get_net_2(&versionslist, &candidate_vers)) {
+#ifndef OPENSSL_NO_ECH
+            /* We MUST reject inner CH offering TLS 1.2 or lower */
+            if (s->ext.ech.success == 1 && ssl_version_cmp(s, candidate_vers, TLS1_3_VERSION) < 0)
+                /*
+                 * TODO: RFC9849 says we MUST abort with an illegal parameter alert
+                 * https://www.rfc-editor.org/rfc/rfc9849.html#name-client-facing-server
+                 * How to force the alert without rebuilding this message?
+                 */
+                return SSL_R_BAD_EXTENSION;
+#endif
             if (ssl_version_cmp(s, candidate_vers, best_vers) <= 0)
                 continue;
             if (ssl_version_supported(s, candidate_vers, &best_method))
@@ -2505,6 +2515,13 @@ int ssl_get_min_max_version(const SSL_CONNECTION *s, int *min_version,
             hole = 0;
         }
     }
+
+#ifndef OPENSSL_NO_ECH
+    /* We MUST not offer < TLS1.3 in inner CH */
+    if (s->ext.ech.ch_depth == 1
+        && ssl_version_cmp(s, *min_version, TLS1_3_VERSION) < 0)
+        *min_version = TLS1_3_VERSION;
+#endif
 
     *max_version = version;
 
