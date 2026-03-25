@@ -20,6 +20,10 @@
 
 #ifndef OPENSSL_NO_ECH
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * Some externally visible limits - most used for sanity checks that could be
  * bigger if needed, but that work for now
@@ -121,6 +125,10 @@ int SSL_CTX_ech_set1_outer_alpn_protos(SSL_CTX *s, const unsigned char *protos,
     const size_t protos_len);
 void SSL_CTX_ech_set_callback(SSL_CTX *ctx, SSL_ech_cb_func f);
 int SSL_set1_ech_config_list(SSL *ssl, const uint8_t *ecl, size_t ecl_len);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
 #endif
