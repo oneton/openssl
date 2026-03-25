@@ -12,6 +12,8 @@
 #include "testutil.h"
 #include "helpers/ssltestlib.h"
 #include "internal/packet.h"
+#include "internal/ssl_unwrap.h"
+#include "../ssl/ssl_local.h"
 
 #ifndef OPENSSL_NO_ECH
 
@@ -72,6 +74,82 @@ static int ch_test_cb(SSL *ssl, int *al, void *arg)
     return 1;
 give_up:
     return 0;
+}
+
+/* ClientHello callback to validate inner CH */
+static int ch_validation_cb(SSL *ssl, int *al, void *arg)
+{
+    int *exts = NULL;
+    size_t len, i;
+    const unsigned char *p;
+    size_t remaining;
+    unsigned int version = 0;
+    PACKET pkt, versions;
+    unsigned char cipher[TLS_CIPHER_LEN];
+    const SSL_CIPHER *c;
+    int ret = SSL_CLIENT_HELLO_ERROR;
+
+    const SSL_CONNECTION *sc = SSL_CONNECTION_FROM_SSL(ssl);
+    /* Skip if we didn't get an inner CH */
+    if (sc->ext.ech.success != 1)
+        return SSL_CLIENT_HELLO_SUCCESS;
+
+    if (!TEST_true(SSL_client_hello_get1_extensions_present(ssl, &exts, &len)))
+        return SSL_CLIENT_HELLO_ERROR;
+
+    for (i = 0; i < len; i++) {
+        // uint16_t ext = exts[i];
+
+        if (exts[i] == TLSEXT_TYPE_supported_versions) {
+            /* Retrieve extension into pkt */
+            if (!TEST_true(SSL_client_hello_get0_ext(ssl, TLSEXT_TYPE_supported_versions, &p, &remaining))
+                || !TEST_true(PACKET_buf_init(&pkt, p, remaining))
+                || !TEST_true(PACKET_as_length_prefixed_1(&pkt, &versions)))
+                goto err;
+
+            /* Inner CH MUST NOT offer TLS1.2 or below */
+            while (PACKET_get_net_2(&versions, &version)) {
+                if (!TEST_true(version != TLS1_VERSION)
+                    || !TEST_true(version != TLS1_1_VERSION)
+                    || !TEST_true(version != TLS1_2_VERSION)
+                    || !TEST_true(version != DTLS1_VERSION)
+                    || !TEST_true(version != DTLS1_2_VERSION))
+                    goto err;
+            }
+
+            /* No TLS1.2 and below extensions in inner CH */
+        } else if (!TEST_false(exts[i] == TLSEXT_TYPE_extended_master_secret)
+            || !TEST_false(exts[i] == TLSEXT_TYPE_renegotiate)
+            || !TEST_false(exts[i] == TLSEXT_TYPE_srp)
+            || !TEST_false(exts[i] == TLSEXT_TYPE_ec_point_formats)
+            || !TEST_false(exts[i] == TLSEXT_TYPE_session_ticket)
+            || !TEST_false(exts[i] == TLSEXT_TYPE_next_proto_neg)
+            || !TEST_false(exts[i] == TLSEXT_TYPE_encrypt_then_mac)) {
+            goto err;
+        }
+    }
+
+    len = SSL_client_hello_get0_ciphers(ssl, &p);
+
+    if (!TEST_true(PACKET_buf_init(&pkt, p, len))) {
+        goto err;
+    }
+    /* Ensure we're not sending irrelevant ciphers */
+    while (PACKET_copy_bytes(&pkt, cipher, TLS_CIPHER_LEN)) {
+        c = SSL_CIPHER_find(ssl, cipher);
+        if (!TEST_ptr(c)
+            || !TEST_true(c->valid)
+            || (SSL_is_tls(ssl) && !TEST_int_gt(c->max_tls, TLS1_2_VERSION))
+            || (SSL_is_dtls(ssl) && !TEST_int_lt(c->max_dtls, DTLS1_2_VERSION))) {
+            goto err;
+        }
+    }
+
+    ret = SSL_CLIENT_HELLO_SUCCESS;
+
+err:
+    OPENSSL_free(exts);
+    return ret;
 }
 
 /*
@@ -1321,6 +1399,8 @@ static int test_ech_roundtrip_helper(int idx, int combo)
     if (combo == OSSL_ECH_TEST_CBS) {
         SSL_CTX_ech_set_callback(sctx, ech_test_cb);
         SSL_CTX_set_client_hello_cb(sctx, ch_test_cb, NULL);
+    } else {
+        SSL_CTX_set_client_hello_cb(sctx, ch_validation_cb, NULL);
     }
     if (combo != OSSL_ECH_TEST_ENOE
         && !TEST_true(SSL_CTX_set1_echstore(cctx, es)))

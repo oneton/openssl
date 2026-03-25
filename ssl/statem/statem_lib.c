@@ -2516,6 +2516,13 @@ int ssl_get_min_max_version(const SSL_CONNECTION *s, int *min_version,
         }
     }
 
+#ifndef OPENSSL_NO_ECH
+    /* We MUST not offer < TLS1.3 in inner CH */
+    if (s->ext.ech.ch_depth == 1
+        && ssl_version_cmp(s, *min_version, TLS1_3_VERSION) < 0)
+        *min_version = TLS1_3_VERSION;
+#endif
+
     *max_version = version;
 
     /* Fail if everything is disabled */
