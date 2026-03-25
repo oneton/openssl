@@ -509,6 +509,18 @@ static bool CheckHandshakeProperties(SSL *ssl, bool is_resume,
     }
   }
 
+    // This seems a little complicated just to get the status
+    char *inner_sni, *outer_sni;
+    bool ech_accepted = SSL_ech_get1_status(ssl, &inner_sni, &outer_sni)
+                        == SSL_ECH_STATUS_SUCCESS;
+    OPENSSL_free(inner_sni);
+    OPENSSL_free(outer_sni);
+    if (config->expect_ech_accept != ech_accepted) {
+        fprintf(stderr, "ECH was %s accepted, but wanted opposite.\n",
+                ech_accepted ? "" : "not ");
+        return false;
+    }
+
   return true;
 }
 

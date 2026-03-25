@@ -367,6 +367,20 @@ const Flag<TestConfig> *FindFlag(const char *name) {
         IntVectorFlag("-curves", &TestConfig::curves),
         StringFlag("-trust-cert", &TestConfig::trust_cert),
         StringFlag("-expect-server-name", &TestConfig::expect_server_name),
+        BoolFlag("-enable-ech-grease", &TestConfig::enable_ech_grease),
+        Base64VectorFlag("-ech-server-config", &TestConfig::ech_server_configs),
+        Base64VectorFlag("-ech-server-key", &TestConfig::ech_server_keys),
+        IntVectorFlag("-ech-is-retry-config", &TestConfig::ech_is_retry_config),
+        BoolFlag("-expect-ech-accept", &TestConfig::expect_ech_accept),
+        // StringFlag("-expect-ech-name-override",
+        //            &TestConfig::expect_ech_name_override),
+        // BoolFlag("-expect-no-ech-name-override",
+        //          &TestConfig::expect_no_ech_name_override),
+        // Base64Flag("-expect-ech-retry-configs",
+        //            &TestConfig::expect_ech_retry_configs),
+        // BoolFlag("-expect-no-ech-retry-configs",
+        //          &TestConfig::expect_no_ech_retry_configs),
+        Base64Flag("-ech-config-list", &TestConfig::ech_config_list),
         Base64Flag("-expect-certificate-types",
                    &TestConfig::expect_certificate_types),
         BoolFlag("-require-any-client-certificate",
@@ -1336,6 +1350,39 @@ static int CertCallback(SSL *ssl, void *arg) {
   return 1;
 }
 
+// This process seems a little silly. We get a base64-encoded ECH config
+// as input argument from the runner. In ParseConfig, it is decoded back to
+// data, which is used here to determine the size. Here we transform
+// this single config to a "list" of configs, which always contains one
+// and then write it to a BIO in pem format.
+static bool ECHConfigToBIO(const bssl::UniquePtr<BIO> *out,
+                           const std::vector<uint8_t> *ech_config) {
+    const uint16_t len = CRYPTO_bswap2(ech_config->size());
+    const std::string header = "-----BEGIN ECHCONFIG-----\n";
+    const std::string footer = "\n-----END ECHCONFIG-----\n";
+
+    // Filter BIO for base64 encoding config
+    const bssl::UniquePtr<BIO> base64(BIO_new(BIO_f_base64()));
+    if (base64 == nullptr) {
+        return false;
+    }
+    BIO_set_flags(base64.get(), BIO_FLAGS_BASE64_NO_NL);
+    BIO_set_next(base64.get(), out->get());
+
+    if (BIO_write(out->get(), header.c_str(), header.length())
+                  != header.length() ||
+        BIO_write(base64.get(), &len, sizeof(len)) != sizeof(len) ||
+        BIO_write(base64.get(), ech_config->data(), ech_config->size())
+                  != ech_config->size() ||
+        !BIO_flush(base64.get()) ||
+        BIO_write(out->get(), footer.c_str(), footer.length())
+                  != footer.length()) {
+        return false;
+                  }
+
+    return true;
+}
+
 bssl::UniquePtr<SSL> TestConfig::NewSSL(
     SSL_CTX *ssl_ctx, SSL_SESSION *session,
     std::unique_ptr<TestState> test_state) const {
@@ -1396,6 +1443,56 @@ bssl::UniquePtr<SSL> TestConfig::NewSSL(
       return nullptr;
     }
   }
+if (enable_ech_grease) {
+    SSL_set_options(ssl.get(), SSL_OP_ECH_GREASE);
+}
+
+if (!ech_config_list.empty() &&
+    !SSL_set1_ech_config_list(ssl.get(), ech_config_list.data(),
+                              ech_config_list.size())) {
+    return nullptr;
+                              }
+if (ech_server_configs.size() != ech_server_keys.size() ||
+    ech_server_configs.size() != ech_is_retry_config.size()) {
+    fprintf(stderr,
+            "-ech-server-config, -ech-server-key, and -ech-is-retry-config "
+            "flags must match.\n");
+    return nullptr;
+    }
+if (!ech_server_configs.empty()) {
+    const bssl::UniquePtr<OSSL_ECHSTORE> store(
+        OSSL_ECHSTORE_new(nullptr, nullptr));
+    if (!store) {
+        return nullptr;
+    }
+    for (size_t i = 0; i < ech_server_configs.size(); i++) {
+        std::vector<uint8_t> ech_config = ech_server_configs[i];
+        std::vector<uint8_t> ech_private_key = ech_server_keys[i];
+        const int is_retry_config = ech_is_retry_config[i];
+
+        bssl::UniquePtr<EVP_PKEY> pkey(
+            EVP_PKEY_new_raw_private_key(EVP_PKEY_X25519,
+                                            nullptr,
+                                            ech_private_key.data(),
+                                            ech_private_key.size()));
+
+        bssl::UniquePtr<BIO> bio(BIO_new(BIO_s_mem()));
+
+        if (pkey == nullptr ||
+            bio == nullptr ||
+            !ECHConfigToBIO(&bio, &ech_config) ||
+            !OSSL_ECHSTORE_set1_key_and_read_pem(store.get(), pkey.get(),
+                                                 bio.get(), is_retry_config)) {
+            fprintf(stderr, "Failed to load ECH config/key #%lu\n", i);
+            return nullptr;
+                                                 }
+    }
+
+    if (!SSL_set1_echstore(ssl.get(), store.get())) {
+        fprintf(stderr, "Failed to set ECH store");
+        return nullptr;
+    }
+}
   if (!host_name.empty() &&
       !SSL_set_tlsext_host_name(ssl.get(), host_name.c_str())) {
     return nullptr;
