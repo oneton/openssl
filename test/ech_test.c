@@ -1217,6 +1217,7 @@ end:
 #define OSSL_ECH_TEST_CBS 5 /* test callbacks */
 #define OSSL_ECH_TEST_V12 6 /* test TLSv1.2 */
 #define OSSL_ECH_TEST_NO_INNER 7 /* test no inner SNI */
+#define OSSL_ECH_TEST_ALL_VERSIONS 8 /* test with TLS1.0-TLS1.3 enabled */
 /* note: early-data is prohibited after HRR so no tests for that */
 
 /*
@@ -1283,6 +1284,14 @@ static int test_ech_roundtrip_helper(int idx, int combo)
         if (!TEST_true(SSL_CTX_set_max_proto_version(cctx, TLS1_2_VERSION)))
             goto end;
         if (!TEST_true(SSL_CTX_set_min_proto_version(cctx, TLS1_2_VERSION)))
+            goto end;
+    }
+    if (combo == OSSL_ECH_TEST_ALL_VERSIONS) {
+        // Enable TLS1.0, TLS1.1 on client
+        SSL_CTX_set_security_level(cctx, 0);
+        if (!TEST_true(SSL_CTX_set_min_proto_version(cctx, TLS1_VERSION))
+            || !TEST_true(SSL_CTX_set_cipher_list(cctx,
+                "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-SHA")))
             goto end;
     }
     if (combo == OSSL_ECH_TEST_EARLY || combo == OSSL_ECH_TEST_ENOE) {
@@ -1364,7 +1373,8 @@ static int test_ech_roundtrip_helper(int idx, int combo)
     /* all good */
     if (combo == OSSL_ECH_TEST_BASIC || combo == OSSL_ECH_TEST_HRR
         || combo == OSSL_ECH_TEST_CUSTOM || combo == OSSL_ECH_TEST_CBS
-        || combo == OSSL_ECH_TEST_NO_INNER) {
+        || combo == OSSL_ECH_TEST_NO_INNER
+        || combo == OSSL_ECH_TEST_ALL_VERSIONS) {
         res = 1;
         goto end;
     }
@@ -1463,6 +1473,14 @@ static int test_ech_no_inner(int idx)
     if (verbose)
         TEST_info("Doing: test_ech_no_inner");
     return test_ech_roundtrip_helper(idx, OSSL_ECH_TEST_NO_INNER);
+}
+
+/* ECH with a client offering TLS1.0-TLS1.3 */
+static int test_ech_all_versions_client(int idx)
+{
+    if (verbose)
+        TEST_info("Doing: test_ech_all_versions_client");
+    return test_ech_roundtrip_helper(idx, OSSL_ECH_TEST_ALL_VERSIONS);
 }
 
 /* ECH with early data for the given suite */
@@ -2012,6 +2030,7 @@ int setup_tests(void)
     ADD_ALL_TESTS(ech_in_out_test, 14);
     ADD_ALL_TESTS(ech_grease_test, 4);
     ADD_ALL_TESTS(test_ech_no_inner, suite_combos);
+    ADD_ALL_TESTS(test_ech_all_versions_client, suite_combos);
     return 1;
 err:
     return 0;
