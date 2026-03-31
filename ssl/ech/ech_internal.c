@@ -16,6 +16,7 @@
 #include "../ssl_local.h"
 #include "../statem/statem_local.h"
 #include "ech_local.h"
+#include "internal/hpke.h"
 
 #ifndef OPENSSL_NO_ECH
 
@@ -205,6 +206,7 @@ int ossl_ech_conn_init(SSL_CONNECTION *s, SSL_CTX *ctx,
     if (ctx->ext.ech.es != NULL
         && (s->ext.ech.es = ossl_echstore_dup(ctx->ext.ech.es)) == NULL)
         goto err;
+    s->ext.ech.hpke_ctx = NULL;
     s->ext.ech.cb = ctx->ext.ech.cb;
     if (ctx->ext.ech.alpn_outer != NULL) {
         s->ext.ech.alpn_outer = OPENSSL_memdup(ctx->ext.ech.alpn_outer,
@@ -1750,7 +1752,6 @@ static unsigned char *hpke_decrypt_encch(SSL_CONNECTION *s,
     unsigned char info[OSSL_ECH_MAX_INFO_LEN];
     size_t info_len = OSSL_ECH_MAX_INFO_LEN;
     int rv = 0;
-    OSSL_HPKE_CTX *hctx = NULL;
     SSL_CTX *sctx = SSL_CONNECTION_GET_CTX(s);
 #ifdef OSSL_ECH_SUPERVERBOSE
     size_t publen = 0;
@@ -1804,16 +1805,18 @@ static unsigned char *hpke_decrypt_encch(SSL_CONNECTION *s,
      */
     ERR_set_mark();
     /* Use OSSL_HPKE_* APIs */
-    hctx = OSSL_HPKE_CTX_new(hpke_mode, hpke_suite, OSSL_HPKE_ROLE_RECEIVER,
+    /* The hpke_ctx is kept around for key logging, free the ctx from the previous iteration */
+    OSSL_HPKE_CTX_free(s->ext.ech.hpke_ctx);
+    s->ext.ech.hpke_ctx = OSSL_HPKE_CTX_new(hpke_mode, hpke_suite, OSSL_HPKE_ROLE_RECEIVER,
         sctx->libctx, sctx->propq);
-    if (hctx == NULL)
+    if (s->ext.ech.hpke_ctx == NULL)
         goto clearerrs;
-    rv = OSSL_HPKE_decap(hctx, senderpub, senderpublen, ee->keyshare,
+    rv = OSSL_HPKE_decap(s->ext.ech.hpke_ctx, senderpub, senderpublen, ee->keyshare,
         info, info_len);
     if (rv != 1)
         goto clearerrs;
     if (forhrr == 1) {
-        rv = OSSL_HPKE_CTX_set_seq(hctx, 1);
+        rv = OSSL_HPKE_CTX_set_seq(s->ext.ech.hpke_ctx, 1);
         if (rv != 1) {
             /* don't clear this error - GREASE can't cause it */
             ERR_clear_last_mark();
@@ -1821,13 +1824,12 @@ static unsigned char *hpke_decrypt_encch(SSL_CONNECTION *s,
             goto end;
         }
     }
-    rv = OSSL_HPKE_open(hctx, clear, &clearlen, aad, aad_len,
+    rv = OSSL_HPKE_open(s->ext.ech.hpke_ctx, clear, &clearlen, aad, aad_len,
         cipher, cipherlen);
 clearerrs:
     /* close off our error handling */
     ERR_pop_to_mark();
 end:
-    OSSL_HPKE_CTX_free(hctx);
     if (rv != 1) {
         OSSL_TRACE(TLS, "HPKE decryption failed somehow\n");
         OPENSSL_free(clear);
@@ -1944,6 +1946,8 @@ int ossl_ech_early_decrypt(SSL_CONNECTION *s, PACKET *outerpkt, PACKET *newpkt)
     char *osni_str = NULL;
     OSSL_ECHSTORE *es = NULL;
     OSSL_ECHSTORE_ENTRY *ee = NULL;
+    unsigned char *shared_secret;
+    size_t shared_secret_len;
 
     if (s == NULL)
         return 0;
@@ -2076,6 +2080,20 @@ int ossl_ech_early_decrypt(SSL_CONNECTION *s, PACKET *outerpkt, PACKET *newpkt)
     if (clear != NULL) {
         s->ext.ech.grease = OSSL_ECH_NOT_GREASE;
         s->ext.ech.success = 1;
+
+        /*
+         * Log ECH config and handshake secret using the random from the outer CH
+         * Skip the 2 version bytes of the outer packet data
+         */
+        if (!ssl_log_secret_random(s, ECH_CONFIG_LABEL, opd + 2,
+            SSL3_RANDOM_SIZE, ee->encoded, ee->encoded_len)
+            || !ossl_hpke_ctx_get0_shared_secret(s->ext.ech.hpke_ctx,
+                &shared_secret, &shared_secret_len)
+            || !ssl_log_secret_random(s, ECH_SECRET_LABEL, opd + 2,
+                SSL3_RANDOM_SIZE, shared_secret, shared_secret_len)) {
+            SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
+            goto err;
+        }
     }
     OSSL_TRACE_BEGIN(TLS)
     {
@@ -2092,6 +2110,9 @@ int ossl_ech_early_decrypt(SSL_CONNECTION *s, PACKET *outerpkt, PACKET *newpkt)
         ossl_ech_pbuf("clear", clear, clearlen);
     }
 #endif
+    /* Key logging done, no need to keep this around */
+    OSSL_HPKE_CTX_free(s->ext.ech.hpke_ctx);
+    s->ext.ech.hpke_ctx = NULL;
     ossl_ech_encch_free(extval);
     OPENSSL_free(extval);
     extval = NULL;

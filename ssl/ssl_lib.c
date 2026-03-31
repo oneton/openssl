@@ -7274,6 +7274,21 @@ int ssl_log_secret(SSL_CONNECTION *sc,
         secret_len);
 }
 
+int ssl_log_secret_random(SSL_CONNECTION *sc,
+    const char *label,
+    const uint8_t *random,
+    size_t random_len,
+    const uint8_t *secret,
+    size_t secret_len)
+{
+    return nss_keylog_int(label,
+        sc,
+        random,
+        random_len,
+        secret,
+        secret_len);
+}
+
 int ssl_cache_cipherlist(SSL_CONNECTION *s, PACKET *cipher_suites)
 {
     if (PACKET_remaining(cipher_suites) == 0) {

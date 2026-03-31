@@ -2860,6 +2860,15 @@ __owur int ssl_log_rsa_client_key_exchange(SSL_CONNECTION *s,
 __owur int ssl_log_secret(SSL_CONNECTION *s, const char *label,
     const uint8_t *secret, size_t secret_len);
 
+/*
+ * ssl_log_secret_random logs |secret| to the SSL_CTX associated with |ssl|, if
+ * logging is available. It returns one on success and zero on failure. It tags
+ * the entry with |label| and uses the provided random instead of client random.
+ */
+__owur int ssl_log_secret_random(SSL_CONNECTION *s, const char *label,
+    const uint8_t *random, size_t random_len, const uint8_t *secret,
+    size_t secret_len);
+
 #define MASTER_SECRET_LABEL "CLIENT_RANDOM"
 #define CLIENT_EARLY_LABEL "CLIENT_EARLY_TRAFFIC_SECRET"
 #define CLIENT_HANDSHAKE_LABEL "CLIENT_HANDSHAKE_TRAFFIC_SECRET"
