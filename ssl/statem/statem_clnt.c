@@ -29,6 +29,7 @@
 #include "internal/comp.h"
 #include "internal/ssl_unwrap.h"
 #include <openssl/ocsp.h>
+#include "internal/hpke.h"
 
 static MSG_PROCESS_RETURN tls_process_as_hello_retry_request(SSL_CONNECTION *s,
     RAW_EXTENSION *extensions);
@@ -1207,6 +1208,9 @@ __owur CON_FUNC_RETURN tls_construct_client_hello(SSL_CONNECTION *s,
     int mt = SSL3_MT_CLIENT_HELLO, rv = 0;
     OSSL_HPKE_SUITE suite;
     OSSL_ECHSTORE_ENTRY *ee = NULL;
+    unsigned char *shared_secret;
+    size_t shared_secret_len;
+    
     /* Work out what SSL/TLS/DTLS version to use */
     int protverr = ssl_set_client_hello_version(s);
 
@@ -1357,6 +1361,15 @@ __owur CON_FUNC_RETURN tls_construct_client_hello(SSL_CONNECTION *s,
         SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
         goto err;
     }
+
+    /* Log ECH config and handshake secret */
+    if (!ssl_log_secret(s, ECH_CONFIG_LABEL, ee->encoded, ee->encoded_len)
+        || !ossl_hpke_ctx_get0_shared_secret(s->ext.ech.hpke_ctx, &shared_secret, &shared_secret_len)
+        || !ssl_log_secret(s, ECH_SECRET_LABEL, shared_secret, shared_secret_len)) {
+        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
+
     /* Free up raw exts as needed (happens like this on real server) */
     if (s->clienthello != NULL
         && s->clienthello->pre_proc_exts != NULL) {

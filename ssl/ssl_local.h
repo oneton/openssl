@@ -2870,6 +2870,8 @@ __owur int ssl_log_secret(SSL_CONNECTION *s, const char *label,
 #define SERVER_APPLICATION_N_LABEL "SERVER_TRAFFIC_SECRET_N"
 #define EARLY_EXPORTER_SECRET_LABEL "EARLY_EXPORTER_SECRET"
 #define EXPORTER_SECRET_LABEL "EXPORTER_SECRET"
+#define ECH_SECRET_LABEL "ECH_SECRET"
+#define ECH_CONFIG_LABEL "ECH_CONFIG"
 
 __owur int srp_generate_server_master_secret(SSL_CONNECTION *s);
 __owur int srp_generate_client_master_secret(SSL_CONNECTION *s);

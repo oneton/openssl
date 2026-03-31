@@ -13,11 +13,10 @@
 #include <openssl/rand.h>
 #include <openssl/kdf.h>
 #include <openssl/core_names.h>
-#include <openssl/hpke.h>
+#include "internal/hpke.h"
 #include <openssl/sha.h>
 #include <openssl/evp.h>
 #include <openssl/err.h>
-#include "internal/hpke_util.h"
 #include "internal/nelem.h"
 #include "internal/common.h"
 
@@ -41,38 +40,6 @@ static const char OSSL_HPKE_EXP_SEC_LABEL[] = "\x73\x65\x63";
 static const char OSSL_HPKE_KEY_LABEL[] = "\x6b\x65\x79";
 /*  "secret" - for generating shared secret */
 static const char OSSL_HPKE_SECRET_LABEL[] = "\x73\x65\x63\x72\x65\x74";
-
-/**
- * @brief sender or receiver context
- */
-struct ossl_hpke_ctx_st {
-    OSSL_LIB_CTX *libctx; /* library context */
-    char *propq; /* properties */
-    int mode; /* HPKE mode */
-    OSSL_HPKE_SUITE suite; /* suite */
-    const OSSL_HPKE_KEM_INFO *kem_info;
-    const OSSL_HPKE_KDF_INFO *kdf_info;
-    const OSSL_HPKE_AEAD_INFO *aead_info;
-    EVP_CIPHER *aead_ciph;
-    int role; /* sender(0) or receiver(1) */
-    uint64_t seq; /* aead sequence number */
-    unsigned char *shared_secret; /* KEM output, zz */
-    size_t shared_secretlen;
-    unsigned char *key; /* final aead key */
-    size_t keylen;
-    unsigned char *nonce; /* aead base nonce */
-    size_t noncelen;
-    unsigned char *exportersec; /* exporter secret */
-    size_t exporterseclen;
-    char *pskid; /* PSK stuff */
-    unsigned char *psk;
-    size_t psklen;
-    EVP_PKEY *authpriv; /* sender's authentication private key */
-    unsigned char *authpub; /* auth public key */
-    size_t authpublen;
-    unsigned char *ikme; /* IKM for sender deterministic key gen */
-    size_t ikmelen;
-};
 
 /**
  * @brief check if KEM uses NIST curve or not
@@ -1475,4 +1442,20 @@ size_t OSSL_HPKE_get_recommended_ikmelen(OSSL_HPKE_SUITE suite)
         return 0;
 
     return kem_info->Nsk;
+}
+
+int ossl_hpke_ctx_get0_shared_secret(const OSSL_HPKE_CTX *ctx,
+    unsigned char **out, size_t *outlen)
+{
+    if (ctx == NULL) {
+        ERR_raise(ERR_LIB_CRYPTO, ERR_R_PASSED_NULL_PARAMETER);
+        return 0;
+    }
+    if (ctx->shared_secret == NULL || ctx->shared_secretlen == 0) {
+        ERR_raise(ERR_LIB_CRYPTO, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+        return 0;
+    }
+    *out = ctx->shared_secret;
+    *outlen = ctx->shared_secretlen;
+    return 1;
 }
