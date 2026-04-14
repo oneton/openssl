@@ -1024,7 +1024,7 @@ int tls_parse_all_extensions(SSL_CONNECTION *s, int context,
 }
 
 int should_add_extension(SSL_CONNECTION *s, unsigned int extctx,
-    unsigned int thisctx, int max_version)
+    unsigned int thisctx, int minversion, int max_version)
 {
     /* Skip if not relevant for our context */
     if ((extctx & thisctx) == 0)
@@ -1034,7 +1034,10 @@ int should_add_extension(SSL_CONNECTION *s, unsigned int extctx,
     if (!extension_is_relevant(s, extctx, thisctx)
         || ((extctx & SSL_EXT_TLS1_3_ONLY) != 0
             && (thisctx & SSL_EXT_CLIENT_HELLO) != 0
-            && (SSL_CONNECTION_IS_DTLS(s) || max_version < TLS1_3_VERSION)))
+            && (SSL_CONNECTION_IS_DTLS(s) || max_version < TLS1_3_VERSION))
+        || ((extctx & SSL_EXT_TLS1_2_AND_BELOW_ONLY) != 0
+            && (thisctx & SSL_EXT_CLIENT_HELLO) != 0
+            && ssl_version_cmp(s, minversion, TLS1_3_VERSION) >= 0))
         return 0;
 
     return 1;
@@ -1053,7 +1056,7 @@ int tls_construct_extensions(SSL_CONNECTION *s, WPACKET *pkt,
     X509 *x, size_t chainidx)
 {
     size_t i;
-    int min_version, max_version = 0, reason;
+    int min_version = 0, max_version = 0, reason;
     const EXTENSION_DEFINITION *thisexd;
     int for_comp = (context & SSL_EXT_TLS1_3_CERTIFICATE_COMPRESSION) != 0;
 #ifndef OPENSSL_NO_ECH
@@ -1093,7 +1096,7 @@ int tls_construct_extensions(SSL_CONNECTION *s, WPACKET *pkt,
         /* On the server side with initialise during ClientHello parsing */
         custom_ext_init(&s->cert->custext);
 #endif
-    if (!custom_ext_add(s, context, pkt, x, chainidx, max_version)) {
+    if (!custom_ext_add(s, context, pkt, x, chainidx, min_version, max_version)) {
         /* SSLfatal() already called */
         return 0;
     }
@@ -1125,7 +1128,7 @@ int tls_construct_extensions(SSL_CONNECTION *s, WPACKET *pkt,
             s->ext.ech.ext_ind = (int)i;
 #endif
             /* Skip if not relevant for our context */
-            if (!should_add_extension(s, thisexd->context, context, max_version))
+            if (!should_add_extension(s, thisexd->context, context, min_version, max_version))
                 continue;
 
             construct = s->server ? thisexd->construct_stoc
